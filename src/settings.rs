@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
@@ -25,14 +26,14 @@ pub struct Content {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SettingsManager {
     pub path: String,
-    pub settings: Vec<Content>,
+    pub settings: HashMap<String, Content>,
 }
 
 impl Default for SettingsManager {
     fn default() -> Self {
         SettingsManager {
             path: format!("~/.config/{}", env!("CARGO_PKG_NAME")),
-            settings: vec![],
+            settings: HashMap::new(),
         }
     }
 }
@@ -64,7 +65,7 @@ impl SettingsManager {
         let item = self
             .settings
             .iter()
-            .find(|setting| setting.header.name == content.header.name);
+            .find(|&(name, _content)| name == &content.header.name);
         if item.is_some() {
             println!("Item already exist: {}", content.header.name);
             return;
@@ -78,7 +79,7 @@ impl SettingsManager {
         }));
         content.header.hash = hex::encode(hasher.result());
 
-        self.settings.push(content);
+        self.settings.insert(content.header.name.clone(), content);
     }
 
     /// Load all settings available in the manager path
@@ -97,23 +98,23 @@ impl SettingsManager {
                 .unwrap_or_else(|error| panic!("Failed to open settings file: {:#?}", error));
             file.read_to_string(&mut contents)
                 .unwrap_or_else(|error| panic!("Failed to read settings file: {:#?}", error));
-            self.settings.push(
-                toml::from_str(&contents).unwrap_or_else(|error| {
-                    panic!("Failed to update settings vector: {:#?}", error)
-                }),
-            )
+
+            let toml_content: Content = toml::from_str(&contents)
+                .unwrap_or_else(|error| panic!("Failed to update settings vector: {:#?}", error));
+            self.settings
+                .insert(toml_content.header.name.clone(), toml_content);
         }
     }
 
     /// Save all settings available in the manager path
     pub fn save(&self) {
-        for setting in &self.settings {
+        for (name, setting) in &self.settings {
             // Create file name for the settings file
-            let mut file_name = Path::new(&self.path).join(&setting.header.name);
+            let mut file_name = Path::new(&self.path).join(name);
             file_name.set_extension("toml");
 
             // Do the same thing for the default file
-            let mut default_file_name = self.get_default_folder().join(&setting.header.name);
+            let mut default_file_name = self.get_default_folder().join(name);
             default_file_name.set_extension("toml");
 
             // Create settings file if it exist or not, we are going to rewrite the data
@@ -192,7 +193,7 @@ mod tests {
 
         // Check file
         let content_toml_string =
-            toml::to_string_pretty(&settings_manager.settings.first()).unwrap();
+            toml::to_string_pretty(&settings_manager.settings["test"]).unwrap();
 
         let mut file_name = Path::new(&settings_manager.path).join("test");
         file_name.set_extension("toml");
@@ -211,12 +212,8 @@ mod tests {
 
     fn load() {
         let settings_manager = SettingsManager::new(Some(create_path()));
-        let item = settings_manager
-            .settings
-            .iter()
-            .find(|content| content.header.name == "test".to_string())
-            .unwrap();
-        let settings = &item.settings.as_ref().unwrap();
+        let content = &settings_manager.settings["test"];
+        let settings = content.settings.as_ref().unwrap();
 
         println!("Check test file contents..");
         assert_eq!(settings["name"].as_str().unwrap(), "John Doe");
