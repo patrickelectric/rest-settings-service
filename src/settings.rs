@@ -73,7 +73,9 @@ impl SettingsManager {
         content.header.modified = false;
 
         let mut hasher = Sha1::new();
-        hasher.input(toml::to_string_pretty(&content).unwrap());
+        hasher.input(toml::to_string_pretty(&content).unwrap_or_else(|error| {
+            panic!("Failed to parse content to create hash: {:#?}", error)
+        }));
         content.header.hash = hex::encode(hasher.result());
 
         self.settings.push(content);
@@ -91,28 +93,51 @@ impl SettingsManager {
 
         for file in files {
             let mut contents = String::new();
-            let mut file = File::open(file.path()).unwrap();
-            file.read_to_string(&mut contents).unwrap();
-            self.settings.push(toml::from_str(&contents).unwrap())
+            let mut file = File::open(file.path())
+                .unwrap_or_else(|error| panic!("Failed to open settings file: {:#?}", error));
+            file.read_to_string(&mut contents)
+                .unwrap_or_else(|error| panic!("Failed to read settings file: {:#?}", error));
+            self.settings.push(
+                toml::from_str(&contents).unwrap_or_else(|error| {
+                    panic!("Failed to update settings vector: {:#?}", error)
+                }),
+            )
         }
     }
 
     /// Save all settings available in the manager path
     pub fn save(&self) {
         for setting in &self.settings {
-            // Open if the file exist, otherwise create it
+            // Create file name for the settings file
             let mut file_name = Path::new(&self.path).join(&setting.header.name);
             file_name.set_extension("toml");
 
+            // Do the same thing for the default file
+            let mut default_file_name = self.get_default_folder().join(&setting.header.name);
+            default_file_name.set_extension("toml");
+
+            // Create settings file if it exist or not, we are going to rewrite the data
             let mut file = File::create(file_name).unwrap_or_else(|error| {
-                panic!("{:#?}", error);
+                panic!("Failed to create settings file: {:#?}", error);
             });
 
-            let _ = file.write_all(
-                toml::to_string_pretty(&setting)
-                    .unwrap_or_else(|error| panic!("{:#?}", error))
-                    .as_bytes(),
-            );
+            // Create the string that will be in the file
+            let toml_string = toml::to_string_pretty(&setting)
+                .unwrap_or_else(|error| panic!("Failed to parse settings to toml: {:#?}", error));
+
+            let _ = file.write_all(&toml_string.as_bytes());
+
+            // By default, we only create the default settings file if it does not exist yet
+            if !default_file_name.exists() {
+                let mut default_file = File::create(default_file_name).unwrap_or_else(|error| {
+                    panic!("Failed to create default file: {:#?}", error);
+                });
+                default_file
+                    .write_all(&toml_string.as_bytes())
+                    .unwrap_or_else(|error| {
+                        panic!("Failed to populate default file: {:#?}", error);
+                    });
+            }
         }
     }
 }
