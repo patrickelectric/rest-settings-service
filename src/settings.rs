@@ -20,6 +20,7 @@ pub struct Header {
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Content {
     pub header: Header,
+    // This needs to be done with toml, otherwise it fails to generate pretty string
     pub settings: Option<toml::Value>,
 }
 
@@ -75,7 +76,7 @@ impl SettingsManager {
 
         let mut hasher = Sha1::new();
         hasher.input(toml::to_string_pretty(&content).unwrap_or_else(|error| {
-            panic!("Failed to parse content to create hash: {:#?}", error)
+            panic!("Failed to parse content to create hash: {:#?}\n{:#?}", error, content)
         }));
         content.header.hash = hex::encode(hasher.result());
 
