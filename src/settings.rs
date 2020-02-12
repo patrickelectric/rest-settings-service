@@ -86,18 +86,29 @@ impl SettingsManager {
 
         let mut hasher = Sha1::new();
         hasher.input(toml::to_string_pretty(&content).unwrap_or_else(|error| {
-            panic!("Failed to parse content to create hash: {:#?}\n{:#?}", error, content)
+            panic!(
+                "Failed to parse content to create hash: {:#?}\n{:#?}",
+                error, content
+            )
         }));
         content.header.hash = hex::encode(hasher.result());
 
-        self.settings.insert(content.header.name.clone(), serde_json::to_value(&content).unwrap_or_else(|error| {
-            panic!("Failed to parse content to json: {:#?}\n{:#?}", error, content)
-        }));
+        self.settings.insert(
+            content.header.name.clone(),
+            serde_json::to_value(&content).unwrap_or_else(|error| {
+                panic!(
+                    "Failed to parse content to json: {:#?}\n{:#?}",
+                    error, content
+                )
+            }),
+        );
     }
 
     /// Load all settings available in the manager path
     pub fn load(&mut self) {
-        let files = std::fs::read_dir(&self.path).unwrap();
+        let files = std::fs::read_dir(&self.path).unwrap_or_else(|error| {
+            panic!("Failed to read settings directory: {:#?}", error);
+        });
         let files = files
             .filter_map(Result::ok)
             .filter(|file| match file.path().extension() {
@@ -117,17 +128,27 @@ impl SettingsManager {
                 return;
             }
 
-            let content: Content = toml::from_str(&contents)
-                .unwrap_or_else(|error| panic!("Failed to update settings vector: {:#?}\n{:#?}\n{:#?}", error, &file, &contents));
-            self.settings.insert(content.header.name.clone(), serde_json::to_value(&content).unwrap_or_else(|error| {
-                panic!("Failed to parse content to json: {:#?}\n{:#?}", error, content)
-            }));
+            let content: Content = toml::from_str(&contents).unwrap_or_else(|error| {
+                panic!(
+                    "Failed to update settings vector: {:#?}\n{:#?}\n{:#?}",
+                    error, &file, &contents
+                )
+            });
+            self.settings.insert(
+                content.header.name.clone(),
+                serde_json::to_value(&content).unwrap_or_else(|error| {
+                    panic!(
+                        "Failed to parse content to json: {:#?}\n{:#?}",
+                        error, content
+                    )
+                }),
+            );
         }
     }
 
     /// Save all settings available in the manager path
     pub fn save(&self) {
-        for (name, setting) in self.settings.clone() {
+        for (name, setting) in &self.settings {
             // Create file name for the settings file
             let mut file_name = Path::new(&self.path).join(&name);
             file_name.set_extension("toml");
@@ -138,12 +159,19 @@ impl SettingsManager {
 
             // Create settings file if it exist or not, we are going to rewrite the data
             let mut file = File::create(&file_name).unwrap_or_else(|error| {
-                panic!("Failed to create settings file: {:#?}\n{:#?}", error, file_name);
+                panic!(
+                    "Failed to create settings file: {:#?}\n{:#?}",
+                    error, file_name
+                );
             });
 
             // Create the string that will be in the file
-            let toml_string = toml::to_string_pretty(&serde_json::from_value::<Content>(setting).unwrap())
-                .unwrap_or_else(|error| panic!("Failed to parse settings to toml: {:#?}", error));
+            let toml_string = toml::to_string_pretty(
+                &serde_json::from_value::<Content>(setting.clone()).unwrap_or_else(|error| {
+                    panic!("Failed to to load setting from json: {:#?}", error);
+                }),
+            )
+            .unwrap_or_else(|error| panic!("Failed to parse settings to toml: {:#?}", error));
 
             let _ = file.write_all(&toml_string.as_bytes());
 
@@ -210,11 +238,10 @@ mod tests {
         settings_manager.push(content);
         settings_manager.save();
 
-        //&serde_json::from_value::<Content>(settings_manager.settings["test"]).unwrap()
-        let test_settings = serde_json::from_value::<Content>(settings_manager.settings["test"].clone()).unwrap();
+        let test_settings =
+            serde_json::from_value::<Content>(settings_manager.settings["test"].clone()).unwrap();
         // Check file
-        let content_toml_string =
-            toml::to_string_pretty(&test_settings).unwrap();
+        let content_toml_string = toml::to_string_pretty(&test_settings).unwrap();
 
         let mut file_name = Path::new(&settings_manager.path).join("test");
         file_name.set_extension("toml");
