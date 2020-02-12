@@ -62,21 +62,38 @@ impl SettingsManager {
         Path::new(&self.path).join("default")
     }
 
-    /*
-    pub fn read_setting(&self, name: &str) -> Option<toml::Value> {
-        if !self.settings.contains_key(name) {
+    pub fn read_setting(&self, mut name: String) -> Option<&serde_json::Value> {
+        let mut setting_name: &str;
+        let mut setting_path = "";
+        if name.contains('/') {
+            if name.starts_with('/') {
+                name.remove(0);
+            }
+
+            if name.ends_with('/') {
+                name.remove(name.len() - 1);
+            }
+
+            if name.contains('/') {
+                let tuple = name.split_at(name.find('/').unwrap());
+                setting_name = tuple.0;
+                setting_path = tuple.1;
+            } else {
+                setting_name = name.as_str();
+            }
+        } else {
+            setting_name = name.as_str();
+        }
+
+        if !self.settings.contains_key(setting_name) {
             return None;
         }
 
-        if !name.contains("/") {
-            return Some(self.settings[name]);
-        }
-        return self.settings;
-    }*/
+        return self.settings[setting_name].pointer(setting_path);
+    }
 
     /// TODO: return something
     pub fn push(&mut self, mut content: Content) {
-        //let item = &self.settings[&content.header.name];
         if self.settings.contains_key(&content.header.name) {
             println!("Item already exist: {}", content.header.name);
             return;
@@ -260,10 +277,15 @@ mod tests {
 
     fn load() {
         let settings_manager = SettingsManager::new(Some(create_path()));
-        let settings = &settings_manager.settings["test"]["settings"];
-        //let settings = content.settings;
 
-        println!("Check test file contents.. {:#?}", settings);
+        println!("Check read_setting function..");
+        assert_eq!(settings_manager.read_setting(String::from("/test/header/name/")).unwrap().as_str().unwrap(), "test");
+        assert_eq!(settings_manager.read_setting(String::from("test/settings/name")).unwrap().as_str().unwrap(), "John Doe");
+        assert_eq!(settings_manager.read_setting(String::from("test/settings/address/city")).unwrap().as_str().unwrap(), "London");
+
+        let settings = &settings_manager.settings["test"]["settings"];
+
+        println!("Check test file contents..");
         assert_eq!(settings["name"].as_str().unwrap(), "John Doe");
         assert_eq!(settings["age"].as_i64().unwrap(), 43);
         assert_eq!(settings["address"]["city"].as_str().unwrap(), "London");
